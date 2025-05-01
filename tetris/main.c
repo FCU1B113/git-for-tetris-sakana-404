@@ -1,4 +1,11 @@
 #include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <time.h>
+
+
+#define CANVAS_WIDTH 10
+#define CANVAS_HEIGHT 20
 
 typedef enum {
 	EMPTY = -1,
@@ -18,7 +25,24 @@ typedef struct {
 	char rotates[4][4][4];
 }Shape;
 
-Shape shape[7] = {
+typedef struct {
+	Color color;
+	Shape_id shape;
+	bool current; // include
+}Block;
+
+typedef struct { // 遊戲狀態(方塊狀態、分數)
+	int x;
+	int y;
+	int score;
+	int rotate;
+	int fall_time;
+	Shape_id queue[4];
+}State;
+
+
+
+Shape shape[7] = { // 各種方塊的基本設定
 	{
 		.shape = I,
 		.color = CYAN,
@@ -54,25 +78,57 @@ Shape shape[7] = {
 	},
 
 	{
-		.shape = Z,
-		.color = YELLOW,
+		.shape = J,
+		.color = BLUE,
+		.size = 3,
+		.rotates =
+		{
+			{
+				{1,0,0},
+				{1,1,1},
+				{0,0,0},
+			},
+
+			{
+				{0,1,1},
+				{0,1,0},
+				{0,1,0},
+			},
+
+			{
+				{0,0,0},
+				{1,1,1},
+				{0,0,1},
+			},
+
+			{
+				{0,1,0},
+				{0,1,0},
+				{1,1,0},
+			}
+		}
+	},
+
+	{
+		.shape = L,
+		.color = WHITE,
 		.size = 3,
 		.rotates =
 		{
 			{
 				{0,0,1},
 				{1,1,1},
-				{1,0,0},
+				{0,0,0},
 			},
 
 			{
-				{1,1,0},
+				{0,1,0},
 				{0,1,0},
 				{0,1,1},
 			},
 
 			{
-				{0,0,1},
+				{0,0,0},
 				{1,1,1},
 				{1,0,0},
 			},
@@ -80,7 +136,7 @@ Shape shape[7] = {
 			{
 				{1,1,0},
 				{0,1,0},
-				{0,1,1},
+				{0,1,0},
 			}
 		}
 	},
@@ -95,7 +151,7 @@ Shape shape[7] = {
 				{1,1},
 				{1,1}
 			},
-			
+
 			{
 				{1,1},
 				{1,1}
@@ -120,30 +176,66 @@ Shape shape[7] = {
 		.rotates =
 		{
 			{
-				{1,0,0},
-				{1,1,1},
+				{0,1,1},
+				{1,1,0},
+				{0,0,0},
+			},
+
+			{
+				{0,1,0},
+				{0,1,1},
 				{0,0,1},
 			},
 
 			{
+				{0,0,0},
 				{0,1,1},
-				{0,1,0},
 				{1,1,0},
 			},
 
 			{
 				{1,0,0},
-				{1,1,1},
-				{0,0,1},
-			},
-
-			{
-				{0,1,1},
-				{0,1,0},
 				{1,1,0},
+				{0,1,0},
 			}
 		}
 	},
+
+	{
+		.shape = Z,
+		.color = YELLOW,
+		.size = 3,
+		.rotates =
+		{
+			{
+				{1,1,0},
+				{0,1,1},
+				{0,0,0},
+			},
+
+			{
+				{0,0,1},
+				{0,1,1},
+				{0,1,0},
+			},
+
+			{
+				{0,0,0},
+				{1,1,0},
+				{0,1,1},
+			},
+
+			{
+				{0,1,0},
+				{1,1,0},
+				{1,0,0},
+			}
+		}
+	},
+
+	
+
+	
 
 	{
 		.shape = T,
@@ -152,6 +244,18 @@ Shape shape[7] = {
 		.rotates =
 		{
 			{
+				{0,1,0},
+				{1,1,1},
+				{0,0,0},
+			},
+
+			{
+				{0,1,0},
+				{0,1,1},
+				{0,1,0},
+			},
+
+			{
 				{0,0,0},
 				{1,1,1},
 				{0,1,0},
@@ -162,108 +266,65 @@ Shape shape[7] = {
 				{1,1,0},
 				{0,1,0},
 			},
-
-			{
-				{0,1,0},
-				{1,1,1},
-				{0,0,0},
-			},
-
-			{
-				{0,1,0},
-				{0,1,1},
-				{0,1,0},
-			}
-
 		}
 	},
 
-	{
-		.shape = J,
-		.color = BLUE,
-		.size = 3,
-		.rotates =
-		{
-			{
-				{0,1,0},
-				{0,1,0},
-				{1,1,0},
-			},
+	
 
-			{
-				{1,0,0},
-				{1,1,1},
-				{0,0,0},
-			},
-
-			{
-				{0,1,1},
-				{0,1,0},
-				{0,1,0},
-			},
-
-			{
-				{0,0,0},
-				{1,1,1},
-				{0,0,1},
-			}
-		}
-	},
-
-	{
-		.shape = L,
-		.color = WHITE,
-		.size = 3,
-		.rotates =
-		{
-			{
-				{0,1,0},
-				{0,1,0},
-				{0,1,1},
-			},
-
-			{
-				{0,0,0},
-				{1,1,1},
-				{1,0,0},
-			},
-
-			{
-				{1,1,0},
-				{0,1,0},
-				{0,1,0},
-			},
-
-			{
-				{0,0,1},
-				{1,1,1},
-				{0,0,0},
-			}
-		}
-	}
+	
 };
 
+void set_block(Block* block, Color color, Shape_id shape, bool current) {
+	block->color = color;
+	block->color = shape;
+	block->current = false;
+}
+
+void reset_block(Block* block) {
+	block->color = BLACK;
+	block->shape = EMPTY;
+	block->current = false;
+}
 
 int main() {
-	Color cur;
-	// 各種方塊
-	for (int i = 0; i < 7; i++) {
-		// 四種方向
-		for (int r = 0; r < 4; r++) {
-			for (int s=0; s < shape[i].size; s++) {
-				for (int t = 0; t < 4; t++) {
-					if (shape[i].rotates[r][s][t] == 0) {
-						cur = WHITE;
-					}
-					else {
-						cur = shape[i].color;
-					}
-					printf("\033[%dm \033[0m", cur);
-				}
-				printf("\n");
-			}
 
+	State state = { // 初始化狀態
+		.x = CANVAS_WIDTH / 2,
+		.y = 0,
+		.score = 0,
+		.rotate = 0,
+		.fall_time = 0
+	};
+
+
+	Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH];
+
+	for (int i = 0; i < CANVAS_HEIGHT; i++) {
+		for (int j = 0; j < CANVAS_WIDTH; j++) {
+			reset_block(&canvas[i][j]);
 		}
 	}
 
+	Shape shape_data = shape[1];
+
+	for (int i = 0; i < shape_data.size; i++) {
+		for (int j = 0; j < shape_data.size; j++) {
+			if (shape_data.rotates[state.rotate][i][j] == 1) {
+				set_block(&canvas[state.y + i][state.x + j], shape_data.color, shape_data.shape, true);
+			}
+		}
+	}
+
+	printf("\033[0;0H\n");
+	for (int i = 0; i < CANVAS_HEIGHT; i++) {
+		printf("|");
+		for (int j = 0; j < CANVAS_WIDTH; j++) {
+			printf("033[%dm\u3000", canvas[i][j].color);
+		}
+
+		printf("\033[0m");
+		printf("|\n");
+	}
+
+	return 0;
 }

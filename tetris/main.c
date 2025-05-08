@@ -288,6 +288,25 @@ void print_canvas(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State *state) {
 		printf("\033[0m");
 		printf("|\n");
 	}
+
+	// 印遊戲旁邊的提示區塊
+	printf("\033[%d;%dHNext:", 3, CANVAS_WIDTH * 2 + 5);
+
+	for (int i = 1; i < 4; i++) { // queue的1~3
+		Shape shape_data = shape[state->queue[i]];
+		for (int j = 0; j < 4; j++) {
+			printf("\033[%d;%dHNext:", i*4+j, CANVAS_WIDTH * 2 + 5);
+			for (int k = 0; k < 4; k++) {
+				if (j < shape_data.size && k < shape_data.size && shape_data.rotates[0][j][k]) {
+					printf("\x1b[%dm  ", shape_data.color);
+				}
+				else {
+					printf("\x1b[%0m  ");
+				}
+			}
+		}
+		
+	}
 }
 
 bool move(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], int original_x, int original_y, int original_rotate, int new_x, int new_y, int new_rotate, Shape_id shape_id) {
@@ -330,6 +349,19 @@ bool move(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], int original_x, int origina
 void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state) {
 	if (move(canvas, state->x, state->y, state->rotate, state->x, state->y + 1, state->rotate, state->queue[0])) {
 		state->y++;
+	}
+	else {
+		state->score += clear_line(canvas);
+
+		// 初始化state
+		state->x = CANVAS_WIDTH / 2;
+		state->y = 0;
+		state->rotate = 0;
+		state->fall_time = 0;
+		state->queue[0] = state->queue[1]; // 東西往前移和新增
+		state->queue[1] = state->queue[2];
+		state->queue[2] = state->queue[3];
+		state->queue[3] = rand() % 7;
 	}
 	return;
 }

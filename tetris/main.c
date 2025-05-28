@@ -64,6 +64,9 @@ typedef struct{
     int fallTime;
     ShapeId queue[4];
     int combo;  // 追蹤連續消行次數
+    int no_clear_count;  // 追蹤連續未消行的方塊數
+    int last_score_gain;  // 最近一次加的分數
+    bool last_rainbow;    // 最近一次是否為彩虹行
 
 } State;
 
@@ -306,38 +309,67 @@ bool move(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], int originalX, int original
     return true;
 }
 
-int clearLine(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH]){
-    for (int i = 0; i < CANVAS_HEIGHT; i++){
-        for (int j = 0; j < CANVAS_WIDTH; j++){
-            if (canvas[i][j].current){
+bool is_rainbow_line(Block row[]) {
+    bool color_present[7] = { false }; // RED to WHITE
+    int unique_colors = 0;
+    for (int j = 0; j < CANVAS_WIDTH; j++) {
+        if (row[j].shape != EMPTY) {
+            int color_index = row[j].color - 41;
+            if (color_index >= 0 && color_index < 7 && !color_present[color_index]) {
+                color_present[color_index] = true;
+                unique_colors++;
+            }
+        }
+    }
+    return unique_colors >= 5;
+}
+
+
+int clear_line(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], bool* last_rainbow){
+    for (int i = 0; i < CANVAS_HEIGHT; i++) {
+        for (int j = 0; j < CANVAS_WIDTH; j++) {
+            if (canvas[i][j].current) {
                 canvas[i][j].current = false;
             }
         }
     }
 
-    int linesCleared = 0;
-    for (int i = CANVAS_HEIGHT - 1; i >= 0; i--){
-        bool isFull = true;
-        for (int j = 0; j < CANVAS_WIDTH; j++){
+    int total_base_score = 0;
+
+    for (int i = CANVAS_HEIGHT - 1; i >= 0; i--) {
+        bool is_full = true;
+        for (int j = 0; j < CANVAS_WIDTH; j++) {
             if (canvas[i][j].shape == EMPTY) {
-                isFull = false;
+                is_full = false;
                 break;
             }
         }
-        if (isFull) {
-            linesCleared += 1;
 
-            for (int j = i; j > 0; j--){
-                for (int k = 0; k < CANVAS_WIDTH; k++){
-                    setBlock(&canvas[j][k], canvas[j - 1][k].color, canvas[j - 1][k].shape, false);
-                    resetBlock(&canvas[j - 1][k]);
+        if (is_full) {
+            bool is_rainbow = is_rainbow_line(canvas[i]);
+            if (is_rainbow) *last_rainbow = true;
+            int base_score = is_rainbow_line(canvas[i]) ? 50 : 1;
+
+            // 移動上方所有行下來
+            for (int j = i; j > 0; j--) {
+                for (int k = 0; k < CANVAS_WIDTH; k++) {
+                    canvas[j][k] = canvas[j - 1][k];
                 }
             }
-            i++;
+
+            // 清空最上面一行
+            for (int k = 0; k < CANVAS_WIDTH; k++) {
+                resetBlock(&canvas[0][k]);
+            }
+
+            total_base_score += base_score;
+            i++; // 檢查新搬下來的這一行
         }
     }
-    return linesCleared;
+
+    return total_base_score;
 }
+
 
 int calculate_score(int lines_cleared, int* combo) {
     int base_score = 0;
@@ -352,6 +384,19 @@ int calculate_score(int lines_cleared, int* combo) {
     (*combo)++;
     int multiplier = (*combo > 1) ? 2 : 1;
     return base_score * multiplier;
+}
+
+void add_garbage_line(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH]) {
+    // 將所有行往上移動一行
+    for (int i = 0; i < CANVAS_HEIGHT - 1; i++) {
+        for (int j = 0; j < CANVAS_WIDTH; j++) {
+            canvas[i][j] = canvas[i + 1][j];
+        }
+    }
+    // 最底下一行填滿灰色方塊（不可消除）
+    for (int j = 0; j < CANVAS_WIDTH; j++) {
+        setBlock(&canvas[CANVAS_HEIGHT - 1][j], 47, EMPTY, false); // 47 是 ANSI 灰色背景
+    }
 }
 
 void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state){
@@ -386,8 +431,25 @@ void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state){
             state->y++;
         }
         else{
-            int lines = clearLine(canvas);
-            state->score += calculate_score(lines, &state->combo);
+            state->last_rainbow = false;
+            int base_score = clear_line(canvas, &state->last_rainbow);
+
+            state->last_score_gain = base_score * ((state->combo > 0) ? 2 : 1);
+
+            if (base_score > 0) {
+                state->no_clear_count = 0;
+            }
+            else {
+                state->no_clear_count++;
+            }
+            state->score += (base_score * ((state->combo > 0) ? 2 : 1));
+            state->combo = (base_score > 0) ? state->combo + 1 : 0;
+
+
+            if (state->no_clear_count >= 15) {
+                add_garbage_line(canvas);
+                state->no_clear_count = 0;
+            }
 
             state->x = CANVAS_WIDTH / 2;
             state->y = 0;
@@ -400,15 +462,14 @@ void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state){
 
             //結束輸出
             if (!move(canvas, state->x, state->y, state->rotate, state->x, state->y, state->rotate, state->queue[0])){
-                printf("\033[%d;%dH\x1b[41m GAME OVER \x1b[0m\033[%d;%dH", CANVAS_HEIGHT - 3, CANVAS_WIDTH * 2 + 5, CANVAS_HEIGHT + 5, 0);
-                exit(0);//結束遊戲
+                state->y = -999; // 設定一個特殊值讓主迴圈跳出
+                return;
+
             }
         }
     }
     return;
 }
-
-
 
 
 void show_welcome_screen(char* player_name) {
@@ -442,32 +503,7 @@ void show_game_over_screen(const char* player_name, int score, int play_time, ch
     printf("Player: %s\n", player_name);
     printf("Time Played: %02d:%02d\n", play_time / 60, play_time % 60);
     printf("Score: %d\n", score);
-    printf("-------------------------------------\n");
-    printf("Leave a bullet comment (彈幕攻擊): ");
-    fgets(comment, 100, stdin);
-    // 移除換行符號
-    size_t len = strlen(comment);
-    if (len > 0 && comment[len - 1] == '\n') {
-        comment[len - 1] = '\0';
-    }
 }
-
-//void save_record(const char* player_name, int score, int play_time, const char* comment) {
-//    FILE* file = fopen("record.txt", "a");
-//    if (file == NULL) {
-//        perror("Failed to open record.txt");
-//        return;
-//    }
-//
-//    fprintf(file, "Player: %s\n", player_name);
-//    fprintf(file, "Time Played: %02d:%02d\n", play_time / 60, play_time % 60);
-//    fprintf(file, "Score: %d\n", score);
-//    fprintf(file, "Comment: %s\n", comment);
-//    fprintf(file, "-----------------------------\n");
-//
-//    fclose(file);
-//}
-
 
 int main(){
 
@@ -483,7 +519,8 @@ int main(){
         .score = 0,
         .rotate = 0,
         .fallTime = 0,
-		.combo = 0
+		.combo = 0,
+        .no_clear_count = 0
     };
 
     for (int i = 0; i < 4; i++){
@@ -507,20 +544,45 @@ int main(){
         }
     }
 
-    while (1){
+    while (state.y >= 0) {
         printCanvas(canvas, &state);
         int elapsed_time = (int)(time(NULL) - start_time);
         show_timer(elapsed_time);
+
+        int info_col = CANVAS_WIDTH * 2 + 30;
+        printf("\033[15;%dHScore: %d", info_col, state.score);
+        if (state.last_score_gain > 0) {
+            printf("\033[16;%dH+%d", info_col, state.last_score_gain);
+        }
+        else {
+            printf("\033[16;%dH     ", info_col); // 清除
+        }
+        printf("\033[17;%dH", info_col);
+        if (state.combo > 1) {
+            printf("[ combo ] ");
+        }
+        if (state.last_rainbow) {
+            int rainbow_colors[] = { 41, 43, 42, 46, 44, 45, 47 };
+            for (int i = 0; i < 7; i++) {
+                printf("\033[%dm ", rainbow_colors[i]);
+            }
+            printf("\033[0m");
+        }
+        else {
+            printf("         ");
+        }
+
+
+		fflush(stdout); // 確保輸出立即顯示
         logic(canvas, &state);
         Sleep(100);
     }
+
 
     int play_time = (int)(time(NULL) - start_time);
     char comment[100];
 	system("cls"); // 清除畫面
     show_game_over_screen(player_name, state.score, play_time, comment);
-    /*save_record(player_name, state.score, play_time, comment);*/
-
 
     return 0;
 }
